@@ -21,6 +21,7 @@ DIETARY_PROTEIN = "HKQuantityTypeIdentifierDietaryProtein"
 DIETARY_CARBS = "HKQuantityTypeIdentifierDietaryCarbohydrates"
 DIETARY_FAT = "HKQuantityTypeIdentifierDietaryFatTotal"
 DIETARY_KCAL = "HKQuantityTypeIdentifierDietaryEnergyConsumed"
+RESTING_HEART_RATE = "HKQuantityTypeIdentifierRestingHeartRate"
 
 
 def to_date_key(datetime_str: str) -> str | None:
@@ -57,6 +58,10 @@ def normalize_value(record_type: str, unit: str, value: float) -> float | None:
         if u == "cal":
             return value / 1000.0
         return None
+    if record_type == RESTING_HEART_RATE:
+        if u in {"count/min", "bpm", "/min"}:
+            return value
+        return None
     return None
 
 
@@ -78,6 +83,7 @@ def parse_export(export_path: Path) -> list[dict[str, str]]:
             "carbs": [],
             "fat": [],
             "kcal": [],
+            "resting_hr": [],
             "training": False,
         }
     )
@@ -91,6 +97,7 @@ def parse_export(export_path: Path) -> list[dict[str, str]]:
         DIETARY_CARBS,
         DIETARY_FAT,
         DIETARY_KCAL,
+        RESTING_HEART_RATE,
     }
 
     # iterparse keeps memory bounded even on large export.xml.
@@ -127,6 +134,8 @@ def parse_export(export_path: Path) -> list[dict[str, str]]:
                                     bucket["fat"].append(normalized)
                                 elif record_type == DIETARY_KCAL:
                                     bucket["kcal"].append(normalized)
+                                elif record_type == RESTING_HEART_RATE:
+                                    bucket["resting_hr"].append(normalized)
         elif elem.tag == "Workout":
             date_key = to_date_key(elem.attrib.get("startDate", ""))
             if date_key:
@@ -149,6 +158,7 @@ def parse_export(export_path: Path) -> list[dict[str, str]]:
                 "trainingDay": "TRUE" if bucket["training"] else "FALSE",
                 "carbsG": f"{sum(bucket['carbs']):.2f}" if bucket["carbs"] else "",
                 "fatG": f"{sum(bucket['fat']):.2f}" if bucket["fat"] else "",
+                "restingHr": f"{avg(bucket['resting_hr']):.1f}" if bucket["resting_hr"] else "",
             }
         )
     if not rows:
@@ -174,6 +184,7 @@ def write_csv(rows: list[dict[str, str]], output: Path) -> None:
         "trainingDay",
         "carbsG",
         "fatG",
+        "restingHr",
     ]
     with output.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)

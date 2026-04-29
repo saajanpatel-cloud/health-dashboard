@@ -16,9 +16,12 @@ PORT = 8000
 
 class Handler(SimpleHTTPRequestHandler):
     def do_POST(self) -> None:
-        if self.path != "/api/refresh":
-            self.send_json(404, {"ok": False, "error": "Unknown endpoint"})
+        if self.path == "/api/refresh":
+            self._post_refresh()
             return
+        self.send_json(404, {"ok": False, "error": "Unknown endpoint"})
+
+    def _post_refresh(self) -> None:
         try:
             proc = subprocess.run(
                 ["python3", str(SYNC_SCRIPT)],

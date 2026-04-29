@@ -5,3 +5,15 @@ __pycache__/
 *.pyo
 .env
 .claude/
+
+# Apple Health export (local only; never commit personal XML)
+apple_health_export/
+**/export.xml
+*.xcuserstate
+*.xcuserdatad
+xcuserdata/
+DerivedData/
+build/
+ios/**/*.ipa
+ios/**/*.dSYM.zip
+ios/DerivedData/
