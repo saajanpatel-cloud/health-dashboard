@@ -44,6 +44,7 @@
     <nav class="tab-bar" role="tablist" aria-label="Main">
       <button type="button" class="tab-btn is-active" role="tab" id="tabBtnOverview" data-tab="overview" aria-selected="true">Overview</button>
       <button type="button" class="tab-btn" role="tab" id="tabBtnTargets" data-tab="targets" aria-selected="false">Targets</button>
+      <button type="button" class="tab-btn" role="tab" id="tabBtnInvestment" data-tab="investment" aria-selected="false">Investment</button>
     </nav>
 
     <div id="tabPanelOverview" class="tab-panel" role="tabpanel" aria-labelledby="tabBtnOverview">
@@ -176,6 +177,13 @@
           </div>
           <div class="help-text"><strong>Total kcal</strong> = 4×protein(g) + 4×carbs(g) + 9×fat(g) (shown in your energy unit). <strong>Apply muscle build / fat loss</strong> pins total kcal to <strong>maintenance ± 250 kcal</strong> and refits grams. <strong>Save Targets</strong> stores the form and refits grams from <strong>maintenance</strong> plus your <strong>weight-goal pace</strong> (it clears the ±250 kcal pin).</div>
         </div>
+      </section>
+    </div>
+
+    <div id="tabPanelInvestment" class="tab-panel hidden" role="tabpanel" aria-labelledby="tabBtnInvestment">
+      <section class="panel">
+        <div class="panel-title">Health Investment</div>
+        <div class="achievability-panel" id="investmentPanel"></div>
       </section>
     </div>
   </div>

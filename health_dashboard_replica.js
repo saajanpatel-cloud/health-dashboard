@@ -94,8 +94,10 @@ const el = {
   totalPct: document.getElementById("totalPct"),
   tabBtnOverview: document.getElementById("tabBtnOverview"),
   tabBtnTargets: document.getElementById("tabBtnTargets"),
+  tabBtnInvestment: document.getElementById("tabBtnInvestment"),
   tabPanelOverview: document.getElementById("tabPanelOverview"),
   tabPanelTargets: document.getElementById("tabPanelTargets"),
+  tabPanelInvestment: document.getElementById("tabPanelInvestment"),
   maintenanceKcal: document.getElementById("maintenanceKcal"),
   prefillMaintenanceBtn: document.getElementById("prefillMaintenanceBtn"),
   applyMuscleMacroBtn: document.getElementById("applyMuscleMacroBtn"),
@@ -1015,6 +1017,199 @@ function renderWeeklyTable(weekly) {
   });
 }
 
+function renderInvestmentPanel() {
+  const panel = document.getElementById("investmentPanel");
+  if (!panel) return;
+  const rows = dailyRows;
+  if (!rows.length) {
+    panel.innerHTML = "<p>No data available. Load your Apple Health export and refresh.</p>";
+    return;
+  }
+
+  const totalDays = rows.length;
+  const latestTs = new Date(rows[rows.length - 1].date).getTime();
+
+  // Training consistency
+  const trainingDaysTotal = rows.filter((r) => r.trainingDay).length;
+  const last30Rows = rows.filter((r) => latestTs - new Date(r.date).getTime() <= 30 * ONE_DAY_MS);
+  const last90Rows = rows.filter((r) => latestTs - new Date(r.date).getTime() <= 90 * ONE_DAY_MS);
+  const training30 = last30Rows.filter((r) => r.trainingDay).length;
+  const training90 = last90Rows.filter((r) => r.trainingDay).length;
+
+  let currentStreak = 0;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].trainingDay) currentStreak++;
+    else break;
+  }
+  let longestStreak = 0;
+  let tempStreak = 0;
+  for (const row of rows) {
+    if (row.trainingDay) {
+      tempStreak++;
+      if (tempStreak > longestStreak) longestStreak = tempStreak;
+    } else {
+      tempStreak = 0;
+    }
+  }
+
+  // Body composition journey: first window vs last window (up to 28 days each)
+  const windowSize = Math.min(28, Math.floor(totalDays / 2));
+  const baselineRows = rows.slice(0, windowSize);
+  const recentRows = rows.slice(rows.length - windowSize);
+  const baselineWeight = averagePositiveMassKg(baselineRows.map((r) => r.weightKg));
+  const recentWeight = averagePositiveMassKg(recentRows.map((r) => r.weightKg));
+  const baselineBf = averageBodyFatPct(baselineRows.map((r) => r.bodyFatPct));
+  const recentBf = averageBodyFatPct(recentRows.map((r) => r.bodyFatPct));
+  const baselineLean = averagePositiveMassKg(baselineRows.map((r) => r.leanMassKg));
+  const recentLean = averagePositiveMassKg(recentRows.map((r) => r.leanMassKg));
+  const wDelta = Number.isFinite(baselineWeight) && Number.isFinite(recentWeight) ? recentWeight - baselineWeight : null;
+  const bfDelta = Number.isFinite(baselineBf) && Number.isFinite(recentBf) ? recentBf - baselineBf : null;
+  const leanDelta = Number.isFinite(baselineLean) && Number.isFinite(recentLean) ? recentLean - baselineLean : null;
+
+  const wGoal = numTarget(targets.weightGoal);
+  const bfGoalNum = numTarget(targets.bodyFatGoal);
+  const refWeight = baselineWeight ?? recentWeight;
+  const wTowardGoal = wDelta !== null && Number.isFinite(wGoal) && Number.isFinite(refWeight)
+    ? (wGoal < refWeight ? wDelta < 0 : wDelta > 0)
+    : null;
+  const bfTowardGoal = bfDelta !== null && Number.isFinite(bfGoalNum)
+    ? (bfGoalNum < (baselineBf ?? recentBf) ? bfDelta < 0 : bfDelta > 0)
+    : (bfDelta !== null ? bfDelta < 0 : null);
+  const wDeltaClass = wTowardGoal !== null ? (wTowardGoal ? " invest-pos" : " invest-neg") : "";
+  const bfDeltaClass = bfTowardGoal !== null ? (bfTowardGoal ? " invest-pos" : " invest-neg") : "";
+  const leanDeltaClass = leanDelta !== null ? (leanDelta >= 0 ? " invest-pos" : " invest-neg") : "";
+
+  // Steps
+  const daysWithSteps = rows.filter((r) => Number.isFinite(r.steps) && r.steps > 0);
+  const totalSteps = sum(rows.map((r) => r.steps));
+  const avgStepsPerDay = daysWithSteps.length ? totalSteps / daysWithSteps.length : null;
+  const stepTarget = numTarget(targets.stepsAvgTarget);
+  const daysHittingSteps = stepTarget > 0 ? daysWithSteps.filter((r) => r.steps >= stepTarget).length : null;
+
+  // Nutrition
+  const daysWithKcal = rows.filter((r) => Number.isFinite(r.kcal) && r.kcal > 0).length;
+  const daysWithProtein = rows.filter((r) => Number.isFinite(r.proteinG) && r.proteinG > 0);
+  const proteinTarget = numTarget(targets.minProtein);
+  const daysHittingProtein = proteinTarget > 0 ? daysWithProtein.filter((r) => r.proteinG >= proteinTarget).length : null;
+
+  const sign = (v) => (v >= 0 ? "+" : "");
+  const windowLabel = windowSize >= 28 ? "4 wks" : `${windowSize} days`;
+
+  const trainPctYear = totalDays > 0 ? Math.round((trainingDaysTotal / totalDays) * 100) : 0;
+  const train90Pct = last90Rows.length > 0 ? Math.round((training90 / last90Rows.length) * 100) : 0;
+  const train30Pct = last30Rows.length > 0 ? Math.round((training30 / last30Rows.length) * 100) : 0;
+
+  const statCard = (val, label) =>
+    `<div class="invest-stat"><div class="invest-stat-val">${val}</div><div class="invest-stat-label">${label}</div></div>`;
+
+  const compRow = (label, from, to, delta, deltaClass) =>
+    `<div class="invest-comp-row">`
+    + `<div class="invest-comp-label">${label}</div>`
+    + `<div class="invest-comp-from">${from}</div>`
+    + `<div class="invest-comp-arrow">→</div>`
+    + `<div class="invest-comp-to">${to}</div>`
+    + `<div class="invest-comp-delta${deltaClass}">${delta}</div>`
+    + `</div>`;
+
+  const blocks = [];
+
+  // Training block
+  blocks.push(
+    `<div class="invest-block">`
+    + `<div class="achiev-h">Training consistency</div>`
+    + `<div class="invest-stats">`
+    + statCard(trainingDaysTotal, "sessions (year)")
+    + statCard(`${trainPctYear}%`, "year rate")
+    + statCard(`${train90Pct}%`, "last 90 days")
+    + statCard(`${train30Pct}%`, "last 30 days")
+    + statCard(currentStreak, "current streak")
+    + statCard(longestStreak, "longest streak")
+    + `</div>`
+    + `</div>`,
+  );
+
+  // Body composition block
+  blocks.push(
+    `<div class="invest-block">`
+    + `<div class="achiev-h">Body composition journey <span class="invest-window-label">(first ${windowLabel} vs last ${windowLabel} avg)</span></div>`
+    + `<div class="invest-comp-grid">`
+    + compRow(
+      "Weight",
+      Number.isFinite(baselineWeight) ? `${fmt1(kgToDisplay(baselineWeight))} ${displayWeightLabel()}` : "—",
+      Number.isFinite(recentWeight) ? `${fmt1(kgToDisplay(recentWeight))} ${displayWeightLabel()}` : "—",
+      wDelta !== null ? `${sign(wDelta)}${fmt1(kgToDisplay(wDelta))} ${displayWeightLabel()}` : "—",
+      wDeltaClass,
+    )
+    + compRow(
+      "Body fat",
+      Number.isFinite(baselineBf) ? `${fmt1(baselineBf)}%` : "—",
+      Number.isFinite(recentBf) ? `${fmt1(recentBf)}%` : "—",
+      bfDelta !== null ? `${sign(bfDelta)}${fmt1(bfDelta)}%` : "—",
+      bfDeltaClass,
+    )
+    + compRow(
+      "Lean mass",
+      Number.isFinite(baselineLean) ? `${fmt1(kgToDisplay(baselineLean))} ${displayWeightLabel()}` : "—",
+      Number.isFinite(recentLean) ? `${fmt1(kgToDisplay(recentLean))} ${displayWeightLabel()}` : "—",
+      leanDelta !== null ? `${sign(leanDelta)}${fmt1(kgToDisplay(leanDelta))} ${displayWeightLabel()}` : "—",
+      leanDeltaClass,
+    )
+    + `</div>`
+    + `<p class="achiev-meta">Averages exclude zero and missing values. Weight delta coloured toward/away from goal${Number.isFinite(wGoal) ? "" : " (no weight goal set — set one in Targets)"}. Lean mass: green = gained.</p>`
+    + `</div>`,
+  );
+
+  // Steps block
+  const stepsCards = [
+    statCard(fmt0(totalSteps), "total steps (year)"),
+    statCard(Number.isFinite(avgStepsPerDay) ? fmt0(avgStepsPerDay) : "—", "avg / logged day"),
+  ];
+  if (stepTarget > 0 && daysHittingSteps !== null) {
+    stepsCards.push(statCard(`${daysHittingSteps} / ${daysWithSteps.length}`, "days hitting target"));
+    stepsCards.push(statCard(
+      daysWithSteps.length > 0 ? `${Math.round((daysHittingSteps / daysWithSteps.length) * 100)}%` : "—",
+      "target success rate",
+    ));
+  }
+  const stepsNote = stepTarget <= 0
+    ? `<p class="achiev-meta" style="margin-top:8px">Set a <strong>steps target</strong> in the Targets tab to see daily compliance.</p>`
+    : "";
+  blocks.push(
+    `<div class="invest-block">`
+    + `<div class="achiev-h">Steps &amp; activity</div>`
+    + `<div class="invest-stats">${stepsCards.join("")}</div>`
+    + stepsNote
+    + `</div>`,
+  );
+
+  // Nutrition block
+  const nutritionCards = [
+    statCard(`${daysWithKcal} / ${totalDays}`, "days with kcal"),
+    statCard(totalDays > 0 ? `${Math.round((daysWithKcal / totalDays) * 100)}%` : "—", "kcal logging rate"),
+    statCard(daysWithProtein.length, "days with protein"),
+  ];
+  if (proteinTarget > 0 && daysHittingProtein !== null) {
+    nutritionCards.push(statCard(`${daysHittingProtein} / ${daysWithProtein.length}`, "days ≥ protein target"));
+    nutritionCards.push(statCard(
+      daysWithProtein.length > 0 ? `${Math.round((daysHittingProtein / daysWithProtein.length) * 100)}%` : "—",
+      "protein hit rate",
+    ));
+  }
+  const nutritionNote = proteinTarget <= 0
+    ? `<p class="achiev-meta" style="margin-top:8px">Set a <strong>protein minimum</strong> in the Targets tab to see compliance.</p>`
+    : "";
+  blocks.push(
+    `<div class="invest-block">`
+    + `<div class="achiev-h">Nutrition logging</div>`
+    + `<div class="invest-stats">${nutritionCards.join("")}</div>`
+    + nutritionNote
+    + `<p class="achiev-meta">${totalDays} days in dataset (last 1 year of export data).</p>`
+    + `</div>`,
+  );
+
+  panel.innerHTML = blocks.join("");
+}
+
 /** Rebuild tables and achievability from in-memory `targets` (no DOM read). */
 function renderCore() {
   if (targets.macroEnergyMode === "muscle" || targets.macroEnergyMode === "fat") {
@@ -1034,6 +1229,7 @@ function renderCore() {
   renderLastSixWeeks(weekly);
   renderWeeklyTable(weekly);
   renderAchievability(weekly);
+  renderInvestmentPanel();
   updateComputedFields();
 }
 
@@ -1042,14 +1238,17 @@ function render() {
   renderCore();
 }
 
+const ALL_TABS = ["overview", "targets", "investment"];
+
 function setActiveTab(tabId) {
-  const id = tabId === "targets" ? "targets" : "overview";
+  const id = ALL_TABS.includes(tabId) ? tabId : "overview";
   prefs.activeTab = id;
   saveJson("replica_prefs", prefs);
-  ["overview", "targets"].forEach((tid) => {
+  ALL_TABS.forEach((tid) => {
     const active = tid === id;
-    const btn = document.getElementById(`tabBtn${tid.charAt(0).toUpperCase() + tid.slice(1)}`);
-    const panel = document.getElementById(`tabPanel${tid.charAt(0).toUpperCase() + tid.slice(1)}`);
+    const capitalized = tid.charAt(0).toUpperCase() + tid.slice(1);
+    const btn = document.getElementById(`tabBtn${capitalized}`);
+    const panel = document.getElementById(`tabPanel${capitalized}`);
     if (btn) {
       btn.classList.toggle("is-active", active);
       btn.setAttribute("aria-selected", active ? "true" : "false");
@@ -1060,8 +1259,7 @@ function setActiveTab(tabId) {
 }
 
 function loadActiveTabFromPrefs() {
-  let t = prefs.activeTab === "targets" ? "targets" : "overview";
-  if (prefs.activeTab === "insights") t = "overview";
+  const t = ALL_TABS.includes(prefs.activeTab) ? prefs.activeTab : "overview";
   setActiveTab(t);
 }
 
@@ -1171,7 +1369,7 @@ function wireEvents() {
     render();
   });
 
-  [["tabBtnOverview", "overview"], ["tabBtnTargets", "targets"]].forEach(([bid, tab]) => {
+  [["tabBtnOverview", "overview"], ["tabBtnTargets", "targets"], ["tabBtnInvestment", "investment"]].forEach(([bid, tab]) => {
     document.getElementById(bid)?.addEventListener("click", () => setActiveTab(tab));
   });
 }
